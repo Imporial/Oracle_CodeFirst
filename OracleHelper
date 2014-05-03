@@ -1,0 +1,440 @@
+    /// <summary>
+    /// Oracle 操作帮助器类
+    /// </summary>
+    public static class OracleHelper
+    {
+        #region 变量
+        /// <summary>
+        /// 数据库连接对象
+        /// </summary>
+        public static string constr = "User Id=chain_store;password=star1234;" +
+                             "Data Source=(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=localhost)(PORT=1521))"+
+                             "(CONNECT_DATA=(SERVER=DEDICATED)(SERVICE_NAME=XE)));" +
+                             "Pooling=false;";
+        #endregion
+
+
+        #region 执行返回一行一列的数据库操作
+        /// <summary>
+        /// 执行返回一行一列的数据库操作
+        /// </summary>
+        /// <param name="commandText">Oracle语句或存储过程名</param>
+        /// <param name="commandType">Oracle命令类型</param>
+        /// <param name="param">Oracle命令参数数组</param>
+        /// <returns>第一行第一列的记录</returns>
+        public static int ExecuteScalar(string commandText, CommandType commandType, params OracleParameter[] param)
+        {
+            int count = 0;
+            using (var conn = new OracleConnection(constr))
+            {
+                using (var cmd = new OracleCommand(commandText, conn))
+                {
+                    cmd.CommandType = commandType;
+                    cmd.Parameters.AddRange(param);
+                    conn.Open();
+                    count = Convert.ToInt32(cmd.ExecuteScalar());
+                }
+            }
+            return count;
+        }
+        #endregion
+
+        #region 执行不查询的数据库操作
+        /// <summary>
+        /// 执行不查询的数据库操作
+        /// </summary>
+        /// <param name="commandText">Oracle语句或存储过程名</param>
+        /// <param name="commandType">Oracle命令类型</param>
+        /// <param name="param">Oracle命令参数数组</param>
+        /// <returns>受影响的行数</returns>
+        public static int ExecuteNonQuery(string commandText, CommandType commandType, params OracleParameter[] param)
+        {
+            int result = 0;
+            using (var conn = new OracleConnection(constr))
+            {
+                using (var cmd = new OracleCommand(commandText, conn))
+                {
+                    cmd.CommandType = commandType;
+                    cmd.Parameters.AddRange(param);
+                    conn.Open();
+                    result = cmd.ExecuteNonQuery();
+                }
+            }
+            return result;
+        }
+        #endregion
+
+        #region 执行返回一条记录的泛型对象
+        /// <summary>
+        /// 执行返回一条记录的泛型对象
+        /// </summary>
+        /// <typeparam name="T">泛型类型</typeparam>
+        /// <param name="reader">只进只读对象</param>
+        /// <returns>泛型对象</returns>
+        private static T ExecuteDataReader<T>(IDataReader reader)
+        {
+            T obj = default(T);
+
+            Type type = typeof(T);
+            obj = (T)Activator.CreateInstance(type);//从当前程序集里面通过反射的方式创建指定类型的对象   
+            //obj = (T)Assembly.Load(OracleHelper._assemblyName).CreateInstance(OracleHelper._assemblyName + "." + type.Name);//从另一个程序集里面通过反射的方式创建指定类型的对象 
+            var propertyInfos = type.GetProperties();//获取指定类型里面的所有属性
+            foreach (var propertyInfo in propertyInfos)
+            {
+                for (int i = 0; i < reader.FieldCount; i++)
+                {
+                    var fieldName = reader.GetName(i);
+                    if (fieldName.ToLower() == propertyInfo.Name.ToLower())
+                    {
+                        var val = reader[propertyInfo.Name.ToUpper()];//读取表中某一条记录里面的某一列信息
+                        if (val != null && val != DBNull.Value)
+                            propertyInfo.SetValue(obj,
+                                Convert.ChangeType(val, propertyInfo.PropertyType), null);//给对象的某一个属性赋值
+                        break;
+                    }
+                }
+            }
+            return obj;
+        }
+        #endregion
+
+        #region 执行返回一条记录的泛型对象
+        /// <summary>
+        /// 执行返回一条记录的泛型对象
+        /// </summary>
+        /// <typeparam name="T">泛型类型</typeparam>
+        /// <param name="commandText">Oracle语句或存储过程名</param>
+        /// <param name="commandType">Oracle命令类型</param>
+        /// <param name="param">Oracle命令参数数组</param>
+        /// <returns>实体对象</returns>
+        public static T ExecuteEntity<T>(string commandText, CommandType commandType, params OracleParameter[] param)
+        {
+            T obj = default(T);
+            using (var conn = new OracleConnection(constr))
+            {
+                using (var cmd = new OracleCommand(commandText, conn))
+                {
+                    cmd.CommandType = commandType;
+                    cmd.Parameters.AddRange(param);
+                    conn.Open();
+                    var reader = cmd.ExecuteReader();
+                    while (reader.Read())
+                    {
+                        obj = OracleHelper.ExecuteDataReader<T>(reader);
+                    }
+                }
+            }
+            return obj;
+        }
+        #endregion
+
+        #region 执行返回多条记录的泛型集合对象
+        /// <summary>
+        /// 执行返回多条记录的泛型集合对象
+        /// </summary>
+        /// <typeparam name="T">泛型类型</typeparam>
+        /// <param name="commandText">Oracle语句或存储过程名</param>
+        /// <param name="commandType">Oracle命令类型</param>
+        /// <param name="param">Oracle命令参数数组</param>
+        /// <returns>泛型集合对象</returns>
+        public static List<T> ExecuteList<T>(string commandText, CommandType commandType, params OracleParameter[] param)
+        {
+            List<T> list = new List<T>();
+            using (var conn = new OracleConnection(constr))
+            {
+                using (var cmd = new OracleCommand(commandText, conn))
+                {
+                    cmd.CommandType = commandType;
+                    cmd.Parameters.AddRange(param);
+                    conn.Open();
+                    var reader = cmd.ExecuteReader();
+                    while (reader.Read())
+                    {
+                        T obj = OracleHelper.ExecuteDataReader<T>(reader);
+                        list.Add(obj);
+                    }
+                    reader.Close();
+                }
+            }
+            return list;
+        }
+        #endregion
+
+
+        #region 重载
+        /// <summary>
+        /// 执行返回数据的第一行第一列
+        /// </summary>
+        /// <param name="commandText">查询语句</param>
+        /// <returns></returns>
+        public static int ExecuteScalar(string commandText)
+        {
+            return ExecuteScalar(commandText, CommandType.Text);
+        }
+        /// <summary>
+        /// 执行查询返回一个泛型集合
+        /// </summary>
+        /// <typeparam name="T">单条数据模型</typeparam>
+        /// <param name="commandText">查询命令</param>
+        /// <returns>查询结果集</returns>
+        public static List<T> ExecuteList<T>(string commandText)
+        {
+            return ExecuteList<T>(commandText, CommandType.Text);
+        }
+        /// <summary>
+        /// 执行查询以返回单条记录
+        /// </summary>
+        /// <typeparam name="T">数据模型</typeparam>
+        /// <param name="commandText">查询命令</param>
+        /// <returns>查询结果对象</returns>
+        public static T ExecuteEntity<T>(string commandText)
+        {
+            return ExecuteEntity<T>(commandText, CommandType.Text);
+        }
+        /// <summary>
+        /// 执行不返回结果集的查询
+        /// </summary>
+        /// <param name="commandText">查询命令</param>
+        /// <returns>受影响的行数</returns>
+        public static int ExecuteNonQuery(string commandText)
+        {
+            return ExecuteNonQuery(commandText, CommandType.Text);
+        }
+        #endregion
+
+        /// <summary>
+        /// CodeFirst 数据检查和自行
+        /// </summary>
+        /// <param name="autoExcute">是否自动执行数据迁移</param>
+        /// <returns></returns>
+        public static bool CodeFirstVerify(bool autoExcute)
+        {
+            return CodeFirstMigrate();
+        }
+
+        /// <summary>
+        /// CodeFirst 数据迁移
+        /// </summary>
+        /// <returns></returns>
+        public static bool CodeFirstMigrate()
+        {
+            var asm = Assembly.GetExecutingAssembly();
+            Type[] types = asm.GetExportedTypes();
+            // 表类型判断委托
+            Func<Attribute[], bool> IsTable = o =>
+            {
+                foreach (Attribute a in o)
+                {
+                    if (a is TableAttribute)
+                        return true;
+                }
+                return false;
+            };
+
+            var CosType = types.Where(o =>
+            {
+                var attri = Attribute.GetCustomAttributes(o, false);
+                return IsTable(attri);
+            });
+
+            foreach (var type in CosType)
+            {
+                // 迁移符合条件的类型
+                var table = GetObjectFromAttribute<TableAttribute>(type);
+                if (!string.IsNullOrWhiteSpace(table.Name))
+                {
+                    // 检查模型和数据库以进行迁移
+                    var tableName = table.Name.ToUpper();
+                    // 查询数据库是否存在此表
+                    var count = ExecuteScalar(
+                        "SELECT COUNT(*) FROM USER_TABLES WHERE TABLE_NAME = '" + tableName + "'");
+                    if (count == 0)
+                    {
+                        // 创建数据表
+                        var createTable = new StringBuilder();
+                        var createSequence = new StringBuilder();
+                        var createTrigger = new StringBuilder();
+                        var enableTrigger = "";
+
+                        createTable.AppendLine("CREATE TABLE \"" + tableName + "\" (");
+                        // 表格模型成员列表
+                        var props = type.GetProperties();
+                        var priKeys = new List<string>();
+                        var identis = new List<string>();
+                        foreach (var prop in props)
+                        {
+                            bool isKey;  // 是否主键标志
+                            bool isIdent;// 是否标识列
+                            createTable.AppendLine("\"" + prop.Name.ToUpper() + "\" "
+                                + ConvertToOracleType(prop, out isKey, out isIdent) + ",");
+                            if (isKey)
+                                priKeys.Add(prop.Name.ToUpper());
+                            if (isIdent)
+                                identis.Add(prop.Name.ToUpper());
+                        }
+                        if (priKeys.Count != 0)
+                            createTable.AppendLine(" CONSTRAINT \"" + tableName + "_PK\" PRIMARY KEY (\"" + priKeys[0] + "\") ENABLE");
+                        createTable.AppendLine(") ");
+                        var resultCount = ExecuteNonQuery(createTable.ToString());
+                        //createTable.AppendLine("/");
+                        createSequence.AppendLine("CREATE SEQUENCE \"" + tableName + "_SEQ\" MINVALUE 1 " +
+                            "MAXVALUE 9999999999999999999999999999 INCREMENT BY 1 START WITH 1 NOCACHE ORDER NOCYCLE");
+                        resultCount = ExecuteNonQuery(createSequence.ToString());
+                        //createTable.AppendLine("/");
+                        if (identis.Count != 0)
+                        {
+                            createTrigger.AppendLine("CREATE OR REPLACE TRIGGER  \"BI_" + tableName + "\" ");
+                            createTrigger.AppendLine("  before insert on \"" + tableName + "\" ");
+                            createTrigger.AppendLine("  for each row");
+                            createTrigger.AppendLine("begin");
+                            createTrigger.AppendLine("  if :NEW.\"" + identis[0] + "\" is null then");
+                            createTrigger.AppendLine("    select \"" + tableName + "_SEQ\".nextval into :NEW.\"" + identis[0] + "\" from sys.dual;");
+                            createTrigger.AppendLine("  end if;");
+                            createTrigger.AppendLine("end;");
+                            resultCount = ExecuteNonQuery(createTrigger.ToString());
+                            //createTable.AppendLine("/");
+                            enableTrigger = "ALTER TRIGGER \"BI_" + tableName + "\" ENABLE";
+                            resultCount = ExecuteNonQuery(enableTrigger);
+                            //createTable.AppendLine("/");
+                        }
+                        //resultCount = ExecuteNonQuery(createTable.ToString());
+                    }
+                    else
+                    {
+                        // 表结构修改
+                        // 查询现有表列
+                        var cols = ExecuteList<ColumnModel>(
+                            "SELECT * FROM USER_TAB_COLUMNS WHERE TABLE_NAME = '" + tableName + "' ORDER BY COLUMN_ID");
+                        // 获取模型属性名集合
+                        var propNames= new List<string>();
+                        var colNames =  new List<string>();
+                        foreach(var prop in type.GetProperties())
+                        {
+                            propNames.Add(prop.Name.ToUpper());
+                        }
+                        foreach (var col in cols)
+                        {
+                            colNames.Add(col.Column_Name.ToUpper());               
+                        }
+                        // 表格字段和屬性列表的差集
+                        var excepts = propNames.Except(colNames);
+                        foreach (var prop in type.GetProperties())
+                        {
+                            var propName = prop.Name.ToUpper();
+                            bool isKey;  // 是否主键标志
+                            bool isIdent;// 是否标识列
+                            var colType = ConvertToOracleType(prop, out isKey, out isIdent);
+
+                            if (!excepts.Contains(propName))
+                                // 添加数据字段
+                                ExecuteNonQuery("alter table \"" + tableName
+                                    + "\" add (\"" + propName + "\" " + colType + ")");
+                        }
+                        foreach (var col in cols)
+                        {
+                            if (!excepts.Contains(col.Column_Name))
+                                // 删除数据字段
+                                ExecuteNonQuery("alter table \"" + tableName
+                                    + "\" drop column \"" + col.Column_Name + "\"");
+                            else
+                            {
+                                bool isKey;  // 是否主键标志
+                                bool isIdent;// 是否标识列
+                                var colType = ConvertToOracleType(
+                                    type.GetProperties().Where(a => a.Name == col.Column_Name).First(), out isKey, out isIdent);
+                                if (colType != col.Data_Type)
+                                    // 修改字段类型
+                                    ExecuteNonQuery("alter table \"" + tableName
+                                        + "\" modify (\"" + col.Column_Name + "\" " + colType + ")");
+                            }
+                        }
+                    }
+                }
+                else
+                    throw new Exception("Oracle 数据表模型 " + type.Name + " 未设置表名！");
+            }
+
+
+            return true;
+        }
+        /// <summary>
+        /// 将常用数据类型转换为 Oracle 数据类型
+        /// </summary>
+        /// <param name="type">系统数据类型</param>
+        /// <param name="isKey">获取成员是否主键</param>
+        /// <param name="isIdent">是否标识列</param>
+        /// <returns></returns>
+        static string ConvertToOracleType(PropertyInfo propInfo, out bool isKey, out bool isIdent)
+        {
+            isKey = false;
+            isIdent = false;
+
+            var type = propInfo.PropertyType;
+            switch (type.Name)
+            {
+                case "Int32":
+                    // 主键检查
+                    var key = GetObjectFromAttribute<KeyAttribute>(propInfo);
+                    if (key != null)
+                    {
+                        isKey = true;
+                        // 标识列
+                        var identity = GetObjectFromAttribute<DatabaseGeneratedAttribute>(propInfo);
+                        if (identity != null && identity.DatabaseGeneratedOption == DatabaseGeneratedOption.Identity)
+                            isIdent = true;
+                        return "NUMBER";
+                    }
+                    else
+                        return "NUMBER NOT NULL ENABLE";
+                case "String":
+                    var returnStr = "";
+                    // 字符串长度
+                    var lenAttr = GetObjectFromAttribute<StringLengthAttribute>(propInfo);
+                    if (lenAttr == null)
+                        returnStr += "NVARCHAR2(2000)";
+                    else
+                        returnStr += "NVARCHAR2(" + lenAttr.MaximumLength + ")";
+                    // 是否必须
+                    var Required = GetObjectFromAttribute<RequiredAttribute>(propInfo);
+                    if (Required != null && !Required.AllowEmptyStrings)
+                        returnStr += " NOT NULL ENABLE";
+                    else
+                        returnStr += "";
+                    return returnStr;
+                case "DateTime":
+                    return "TIMESTAMP (6) WITH LOCAL TIME ZONE NOT NULL ENABLE";
+                case "Nullable`1":
+                    // 可为空值类型
+                    switch (type.GetGenericArguments()[0].Name)
+                    {
+                        case "Int32":
+                            return "NUMBER";
+                        case "DateTime":
+                            return "TIMESTAMP (6) WITH LOCAL TIME ZONE";
+                    }
+                    return "";
+            }
+            return string.Empty;
+        }
+        /// <summary>
+        /// 从特性中获取该特性类型的对象
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="o"></param>
+        /// <returns></returns>
+        static T GetObjectFromAttribute<T>(MemberInfo element) where T : Attribute
+        {
+            return (T)Attribute.GetCustomAttribute(element, typeof(T));
+        }
+    }
+
+    public class ColumnModel
+    {
+        public string Table_Name { get; set; }
+
+        public string Column_Name { get; set; }
+
+        public string Data_Type { get; set; }
+
+        public int Char_Length { get; set; }
+    }
