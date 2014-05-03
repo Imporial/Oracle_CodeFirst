@@ -1,3 +1,15 @@
+using Oracle.ManagedDataAccess.Client;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Data;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+
+namespace App
+{
     /// <summary>
     /// Oracle 操作帮助器类
     /// </summary>
@@ -219,7 +231,13 @@
         public static bool CodeFirstMigrate()
         {
             var asm = Assembly.GetExecutingAssembly();
-            Type[] types = asm.GetExportedTypes();
+            var types = asm.GetExportedTypes().ToList();
+            try
+            {
+                var asm1 = Assembly.Load("__code");
+                types.AddRange(asm1.GetExportedTypes());
+            }
+            catch { }
             // 表类型判断委托
             Func<Attribute[], bool> IsTable = o =>
             {
@@ -317,7 +335,7 @@
                             colNames.Add(col.Column_Name.ToUpper());               
                         }
                         // 表格字段和屬性列表的差集
-                        var excepts = propNames.Except(colNames);
+                        var excepts = propNames.Except(colNames).ToList();
                         foreach (var prop in type.GetProperties())
                         {
                             var propName = prop.Name.ToUpper();
@@ -325,14 +343,15 @@
                             bool isIdent;// 是否标识列
                             var colType = ConvertToOracleType(prop, out isKey, out isIdent);
 
-                            if (!excepts.Contains(propName))
+                            if (excepts.Contains(propName))
                                 // 添加数据字段
                                 ExecuteNonQuery("alter table \"" + tableName
                                     + "\" add (\"" + propName + "\" " + colType + ")");
                         }
+                        excepts = colNames.Except(propNames).ToList();
                         foreach (var col in cols)
                         {
-                            if (!excepts.Contains(col.Column_Name))
+                            if (excepts.Contains(col.Column_Name))
                                 // 删除数据字段
                                 ExecuteNonQuery("alter table \"" + tableName
                                     + "\" drop column \"" + col.Column_Name + "\"");
@@ -340,8 +359,9 @@
                             {
                                 bool isKey;  // 是否主键标志
                                 bool isIdent;// 是否标识列
+                                var props = type.GetProperties();
                                 var colType = ConvertToOracleType(
-                                    type.GetProperties().Where(a => a.Name == col.Column_Name).First(), out isKey, out isIdent);
+                                    props.Where(a => a.Name.ToUpper() == col.Column_Name).First(), out isKey, out isIdent);
                                 if (colType != col.Data_Type)
                                     // 修改字段类型
                                     ExecuteNonQuery("alter table \"" + tableName
@@ -438,3 +458,4 @@
 
         public int Char_Length { get; set; }
     }
+}
