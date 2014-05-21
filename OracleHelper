@@ -8,7 +8,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 
-namespace App
+namespace WebRTC.Filters
 {
     /// <summary>
     /// Oracle 操作帮助器类
@@ -101,7 +101,8 @@ namespace App
                         var val = reader[propertyInfo.Name.ToUpper()];//读取表中某一条记录里面的某一列信息
                         if (val != null && val != DBNull.Value)
                             propertyInfo.SetValue(obj,
-                                Convert.ChangeType(val, propertyInfo.PropertyType), null);//给对象的某一个属性赋值
+                                Convert.ChangeType(val, propertyInfo.PropertyType.IsGenericType ?
+                                propertyInfo.PropertyType.GetGenericArguments()[0] : propertyInfo.PropertyType), null);//给对象的某一个属性赋值
                         break;
                     }
                 }
@@ -234,6 +235,7 @@ namespace App
             var types = asm.GetExportedTypes().ToList();
             try
             {
+                // App_Code 文件夹
                 var asm1 = Assembly.Load("__code");
                 types.AddRange(asm1.GetExportedTypes());
             }
@@ -257,6 +259,7 @@ namespace App
 
             foreach (var type in CosType)
             {
+                //OracleTransaction trans = new OracleTransaction();
                 // 迁移符合条件的类型
                 var table = GetObjectFromAttribute<TableAttribute>(type);
                 if (!string.IsNullOrWhiteSpace(table.Name))
@@ -363,9 +366,25 @@ namespace App
                                 var colType = ConvertToOracleType(
                                     props.Where(a => a.Name.ToUpper() == col.Column_Name).First(), out isKey, out isIdent);
                                 if (colType != col.Data_Type)
-                                    // 修改字段类型
-                                    ExecuteNonQuery("alter table \"" + tableName
-                                        + "\" modify (\"" + col.Column_Name + "\" " + colType + ")");
+                                {
+                                    if (col.Data_Type == "NUMBER" && col.Data_Scale != null)
+                                    {
+                                        // Decimal 类型比较
+                                        if (colType != "NUMBER(38," + col.Data_Scale + ")")
+                                            ExecuteNonQuery("alter table \"" + tableName
+                                                + "\" modify (\"" + col.Column_Name + "\" " + colType + ")");
+                                    }
+                                    else
+                                    {
+                                        try
+                                        {
+                                            // 修改字段类型
+                                            ExecuteNonQuery("alter table \"" + tableName
+                                                + "\" modify (\"" + col.Column_Name + "\" " + colType + ")");
+                                        }
+                                        catch { }
+                                    }
+                                }
                             }
                         }
                     }
@@ -423,6 +442,10 @@ namespace App
                     return returnStr;
                 case "DateTime":
                     return "TIMESTAMP (6) WITH LOCAL TIME ZONE NOT NULL ENABLE";
+                case "Decimal":
+                    return "NUMBER(38,2) NOT NULL ENABLE";
+                case "Boolean":
+                    return "CHAR(1) NOT NULL ENABLE";
                 case "Nullable`1":
                     // 可为空值类型
                     switch (type.GetGenericArguments()[0].Name)
@@ -431,6 +454,10 @@ namespace App
                             return "NUMBER";
                         case "DateTime":
                             return "TIMESTAMP (6) WITH LOCAL TIME ZONE";
+                        case "Decimal":
+                            return "NUMBER(38,2)";
+                        case "Boolean":
+                            return "CHAR(1)";
                     }
                     return "";
             }
@@ -447,15 +474,34 @@ namespace App
             return (T)Attribute.GetCustomAttribute(element, typeof(T));
         }
     }
-
+    /// <summary>
+    /// 查询表结构模型
+    /// </summary>
     public class ColumnModel
     {
+        /// <summary>
+        /// 表名
+        /// </summary>
         public string Table_Name { get; set; }
-
+        /// <summary>
+        /// 列名
+        /// </summary>
         public string Column_Name { get; set; }
-
+        /// <summary>
+        /// 数据类型
+        /// </summary>
         public string Data_Type { get; set; }
-
+        /// <summary>
+        /// 字段可否为空
+        /// </summary>
+        public string Nullable { get; set; }
+        /// <summary>
+        /// 字符长度
+        /// </summary>
         public int Char_Length { get; set; }
+        /// <summary>
+        /// 小数
+        /// </summary>
+        public int? Data_Scale { get; set; }
     }
 }
